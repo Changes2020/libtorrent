@@ -5,7 +5,8 @@ matrix:
   fast_finish: true
   include:
     - if: repo = arvidn/libtorrent
-      env: variant=release sonar_scan=1 toolset=gcc check_headers=1
+      env: variant=release sonar_scan=1 toolset=gcc
+    - env: variant=release toolset=gcc check_headers=1 python=1
     - env: variant=test_debug crypto=openssl docs=1 tests=1 examples=1 tools=1 toolset=darwin
       os: osx
       osx_image: xcode11.2
@@ -37,6 +38,10 @@ matrix:
           packages:
           - ninja-build
     - env: arch=arm toolset=gcc-arm
+      addons:
+        apt:
+          packages:
+          - libboost-tools-dev
 
 notifications:
   email: false
@@ -71,7 +76,7 @@ before_install:
 
   # pull down a recent version of boost and build boost-build
   - cd $HOME;
-  - 'if [[ ! -d boost ]]; then
+  - 'if [[ ! -d boost/.git ]]; then
       git clone --depth=1 --branch=boost-1.72.0 https://github.com/boostorg/boost.git;
     fi'
   - export BOOST_ROOT=$PWD/boost
@@ -82,6 +87,18 @@ before_install:
   - ./b2 headers
   - export PATH=$BOOST_ROOT:$PATH
 
+  - 'if [[ "$install_boost" = "1" ]]; then
+      cd $BOOST_ROOT;
+      sudo ./b2 cxxstd=14 release install --with-python --with-system | grep -v "^common.copy " | grep -v "^\.\.\.skipped " | grep -v "th target\.\.\.$";
+      cd tools/build/;
+      echo "bootstrapping boost.build";
+      ./bootstrap.sh;
+      echo "installing boost.build";
+      sudo ./b2 install --prefix=/usr/;
+      sudo ln -s /usr/local/lib/libboost_python37.so /usr/local/lib/libboost_python.so;
+      sudo ln -s /usr/local/lib/libboost_python36.so /usr/local/lib/libboost_python3.so;
+    fi;'
+
   - cd $TRAVIS_BUILD_DIR;
   - git submodule update --depth=1 --init --recursive
   - 'if [[ $crypto == "" ]]; then export crypto=built-in; fi'
@@ -91,7 +108,7 @@ before_install:
       travis_retry brew update > /dev/null && brew install ccache;
      fi'
   - 'if [[ $TRAVIS_OS_NAME == "osx" && "$python" == "1" ]]; then
-      travis_retry brew install python@3.8;
+      travis_retry brew install python;
     fi'
   - 'if [[ "$python" == "1" ]]; then
        which python3;
@@ -125,6 +142,7 @@ before_install:
   - ulimit -a
 
 install:
+
   - touch ~/user-config.jam
   - 'if [[ $toolset == "gcc" ]]; then
       g++ --version;
@@ -168,18 +186,6 @@ install:
     fi'
   - 'echo "using python : : $(which python3) : /usr/local/Frameworks/Python.framework/Headers : : <target-os>darwin ;" >> ~/user-config.jam'
   - 'echo "using python : : $(which python3) : : : <target-os>linux ;" >> ~/user-config.jam'
-  - 'if [[ "$install_boost" = "1" ]]; then
-      cd $BOOST_ROOT;
-      sudo ./b2 cxxstd=14 release install --with-python --with-system | grep -v "^common.copy " | grep -v "^\.\.\.skipped " | grep -v "th target\.\.\.$";
-      cd tools/build/;
-      echo "bootstrapping boost.build";
-      ./bootstrap.sh;
-      echo "installing boost.build";
-      sudo ./b2 install --prefix=/usr/;
-      sudo ln -s /usr/local/lib/libboost_python37.so /usr/local/lib/libboost_python.so;
-      sudo ln -s /usr/local/lib/libboost_python36.so /usr/local/lib/libboost_python3.so;
-      cd $TRAVIS_BUILD_DIR;
-    fi;'
   - cat ~/user-config.jam
   - if [ "$docs" == "1" ]; then rst2html.py --version; fi
   - 'if [ "$lint" == "1" ]; then curl "https://raw.githubusercontent.com/google/styleguide/71ec7f1e524969c19ce33cfc72e8e023f2b98ee2/cpplint/cpplint.py" >~/cpplint.py; fi'
